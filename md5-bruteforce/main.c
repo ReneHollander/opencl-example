@@ -16,7 +16,7 @@
 
 int main(void) {
 
-    int maxlen = 5;
+    int maxlen = 2;
 
     long permutations = 0;
     for (long i = 1; i <= maxlen; i++) {
@@ -64,8 +64,15 @@ int main(void) {
     cl_device_id device_id = NULL;
     cl_uint ret_num_devices;
     cl_uint ret_num_platforms;
-    cl_int ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
-    ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
+    cl_int ret = 0;
+    ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+    ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &ret_num_devices);
+
+    char str[128];
+    size_t strSize = (sizeof(char) * 128);
+    size_t retSize;
+    ret = clGetDeviceInfo(device_id, CL_DEVICE_NAME, strSize, (void *) str, &retSize);
+    printf("Name: %s\n", str);
 
     // Create an OpenCL context
     cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
@@ -76,12 +83,14 @@ int main(void) {
     // Create memory buffers on the device for each vector
     cl_mem starts_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, THREADS * sizeof(int), NULL, &ret);
     cl_mem stops_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, THREADS * sizeof(int), NULL, &ret);
+    cl_mem maxlen_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(int), NULL, &ret);
     cl_mem pw_hash_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(uint) * 4, NULL, &ret);
     cl_mem cracked_pw_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(char) * (maxlen + 1), NULL, &ret);
 
     // Copy the lists A and B to their respective memory buffers
     ret = clEnqueueWriteBuffer(command_queue, starts_mem_obj, CL_TRUE, 0, THREADS * sizeof(int), starts, 0, NULL, NULL);
     ret = clEnqueueWriteBuffer(command_queue, stops_mem_obj, CL_TRUE, 0, THREADS * sizeof(int), stops, 0, NULL, NULL);
+    ret = clEnqueueWriteBuffer(command_queue, maxlen_mem_obj, CL_TRUE, 0, sizeof(int), &maxlen, 0, NULL, NULL);
     ret = clEnqueueWriteBuffer(command_queue, pw_hash_mem_obj, CL_TRUE, 0, sizeof(uint) * 4, pw_hash, 0, NULL, NULL);
 
     // Create a program from the kernel source
@@ -110,18 +119,19 @@ int main(void) {
     // Set the arguments of the kernel
     ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *) &starts_mem_obj);
     ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *) &stops_mem_obj);
-    ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *) &pw_hash_mem_obj);
-    ret = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *) &cracked_pw_mem_obj);
+    ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *) &maxlen_mem_obj);
+    ret = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *) &pw_hash_mem_obj);
+    ret = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void *) &cracked_pw_mem_obj);
 
     // Execute the OpenCL kernel on the list
     size_t global_item_size = THREADS; // Process the entire lists
-    size_t local_item_size = 1; // Divide work items into groups of 64
+    size_t local_item_size = 64; // Divide work items into groups of 64
     cl_event event;
     ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_item_size, &local_item_size, 0, NULL, &event);
     clWaitForEvents(1, &event);
 
     // Read the memory buffer C on the device to the local variable C
-    char *cracked_pw = (char *) calloc((size_t) (maxlen + 1), sizeof(char));
+    char *cracked_pw = (char *) malloc(sizeof(char) * (maxlen + 1));
 //    char *cracked_pw = (char *) malloc(sizeof(char) * (maxlen + 1));
     ret = clEnqueueReadBuffer(command_queue, cracked_pw_mem_obj, CL_TRUE, 0, sizeof(char) * (maxlen + 1), cracked_pw, 0, NULL, NULL);
     printf("Cracked Password: %s\n", cracked_pw);

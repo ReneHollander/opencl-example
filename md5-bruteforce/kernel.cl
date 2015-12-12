@@ -1,13 +1,12 @@
 #include "md5.cl"
 
-__kernel void vector_add(__global const int *starts, __global const int *stops, __global uint *pw_hash, __global char *cracked_pw) {
+__kernel void vector_add(__global const int *starts, __global const int *stops, __global const int *maxlen_in, __global uint *pw_hash, __global char *cracked_pw) {
   // Get the index of the current element to be processed
-  int id = get_global_id(0);
-  int start = starts[id];
-  int stop = stops[id];
-  int maxlen = 5;
-
-  char chars[11];
+  __private int id = get_global_id(0);
+  __private int start = starts[id];
+  __private int stop = stops[id];
+  __private int maxlen = *maxlen_in;
+  __private char chars[32];
 
   for (int i = start; i < stop; i++) {
     int actual_length = 0;
@@ -21,7 +20,7 @@ __kernel void vector_add(__global const int *starts, __global const int *stops, 
         break;
       }
     }
-    uint this_hash[4];
+    __private uint this_hash[4];
     md5(chars, actual_length, &this_hash);
     if (
       this_hash[0] == pw_hash[0] &&
