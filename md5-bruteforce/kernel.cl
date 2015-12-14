@@ -3,10 +3,10 @@
 __kernel void vector_add(__global const int *starts, __global const int *stops, __global const int *maxlen_in, __global uint *pw_hash, __global char *cracked_pw) {
   // Get the index of the current element to be processed
   __private int id = get_global_id(0);
-  __private int start = starts[id];
-  __private int stop = stops[id];
-  __private int maxlen = *maxlen_in;
-  __private char chars[32];
+  int start = starts[id];
+  int stop = stops[id];
+  int maxlen = *maxlen_in;
+  char chars[32];
 
   for (int i = start; i < stop; i++) {
     int actual_length = 0;
@@ -20,7 +20,7 @@ __kernel void vector_add(__global const int *starts, __global const int *stops, 
         break;
       }
     }
-    __private uint this_hash[4];
+    uint this_hash[4];
     md5(chars, actual_length, &this_hash);
     if (
       this_hash[0] == pw_hash[0] &&
@@ -28,7 +28,7 @@ __kernel void vector_add(__global const int *starts, __global const int *stops, 
       this_hash[2] == pw_hash[2] &&
       this_hash[3] == pw_hash[3]
       ) {
-        for (int i = 0; i < maxlen; i++) {
+        for (int i = 0; i < actual_length; i++) {
           cracked_pw[i] = chars[i];
           cracked_pw[i + 1] = 0x00;
         }

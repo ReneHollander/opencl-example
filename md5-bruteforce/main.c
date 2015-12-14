@@ -10,40 +10,44 @@
 #endif
 
 #include <math.h>
+#include <time.h>
 
 #define MAX_SOURCE_SIZE (0x100000)
-#define THREADS 512
+#define GLOBAL_ITEM_SIZE 8192
+#define LOCAL_ITEM_SIZE 64
+#define BILLION 1E9
 
 int main(void) {
 
-    int maxlen = 2;
+    int maxlen = 6;
 
     long permutations = 0;
     for (long i = 1; i <= maxlen; i++) {
         permutations += pow(26, i);
     }
-    long permutationsPerThread = permutations / THREADS;
-    long missingPermutations = permutations - permutationsPerThread * THREADS;
+    long permutationsPerThread = permutations / GLOBAL_ITEM_SIZE;
+    long missingPermutations = permutations - permutationsPerThread * GLOBAL_ITEM_SIZE;
 
     printf("Permutations globally: %lu!\n", permutations);
     printf("Permutations per thread: %lu!\n", permutationsPerThread);
     printf("Permutations missing: %lu!\n", missingPermutations);
+    printf("\n");
 
-    int *starts = (int *) malloc(sizeof(int) * THREADS);
-    int *stops = (int *) malloc(sizeof(int) * THREADS);
+    int *starts = (int *) malloc(sizeof(int) * GLOBAL_ITEM_SIZE);
+    int *stops = (int *) malloc(sizeof(int) * GLOBAL_ITEM_SIZE);
     uint *pw_hash = (uint *) malloc(sizeof(uint) * 4);
 
-    sscanf("ab56b4d92b40713acc5af89985d4b786", "%08x%08x%08x%08x", &pw_hash[0], &pw_hash[1], &pw_hash[2], &pw_hash[3]);
-    printf("Input Hash: %x %x %x %x\n", pw_hash[0], pw_hash[1], pw_hash[2], pw_hash[3]);
+    sscanf("e80b5017098950fc58aad83c8c14978e", "%08x%08x%08x%08x", &pw_hash[0], &pw_hash[1], &pw_hash[2], &pw_hash[3]);
+    printf("Input Hash: %x%x%x%x\n", pw_hash[0], pw_hash[1], pw_hash[2], pw_hash[3]);
 
     int count = 0;
-    for (int i = 0; i < THREADS; i++) {
+    for (int i = 0; i < GLOBAL_ITEM_SIZE; i++) {
         *(starts + i) = count;
         count += permutationsPerThread;
         *(stops + i) = count;
         count++;
     }
-    *(stops + THREADS - 1) += missingPermutations;
+    *(stops + GLOBAL_ITEM_SIZE - 1) += missingPermutations;
 
     // Load the kernel source code into the array source_str
     FILE *fp;
@@ -81,15 +85,15 @@ int main(void) {
     cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &ret);
 
     // Create memory buffers on the device for each vector
-    cl_mem starts_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, THREADS * sizeof(int), NULL, &ret);
-    cl_mem stops_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, THREADS * sizeof(int), NULL, &ret);
+    cl_mem starts_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, GLOBAL_ITEM_SIZE * sizeof(int), NULL, &ret);
+    cl_mem stops_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, GLOBAL_ITEM_SIZE * sizeof(int), NULL, &ret);
     cl_mem maxlen_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(int), NULL, &ret);
     cl_mem pw_hash_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(uint) * 4, NULL, &ret);
     cl_mem cracked_pw_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(char) * (maxlen + 1), NULL, &ret);
 
     // Copy the lists A and B to their respective memory buffers
-    ret = clEnqueueWriteBuffer(command_queue, starts_mem_obj, CL_TRUE, 0, THREADS * sizeof(int), starts, 0, NULL, NULL);
-    ret = clEnqueueWriteBuffer(command_queue, stops_mem_obj, CL_TRUE, 0, THREADS * sizeof(int), stops, 0, NULL, NULL);
+    ret = clEnqueueWriteBuffer(command_queue, starts_mem_obj, CL_TRUE, 0, GLOBAL_ITEM_SIZE * sizeof(int), starts, 0, NULL, NULL);
+    ret = clEnqueueWriteBuffer(command_queue, stops_mem_obj, CL_TRUE, 0, GLOBAL_ITEM_SIZE * sizeof(int), stops, 0, NULL, NULL);
     ret = clEnqueueWriteBuffer(command_queue, maxlen_mem_obj, CL_TRUE, 0, sizeof(int), &maxlen, 0, NULL, NULL);
     ret = clEnqueueWriteBuffer(command_queue, pw_hash_mem_obj, CL_TRUE, 0, sizeof(uint) * 4, pw_hash, 0, NULL, NULL);
 
@@ -124,35 +128,36 @@ int main(void) {
     ret = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void *) &cracked_pw_mem_obj);
 
     // Execute the OpenCL kernel on the list
-    size_t global_item_size = THREADS; // Process the entire lists
-    size_t local_item_size = 64; // Divide work items into groups of 64
+    size_t global_item_size = GLOBAL_ITEM_SIZE; // Process the entire lists
+    size_t local_item_size = LOCAL_ITEM_SIZE; // Divide work items into groups of 64
     cl_event event;
+
+    struct timespec requestStart, requestEnd;
+    clock_gettime(CLOCK_REALTIME, &requestStart);
     ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_item_size, &local_item_size, 0, NULL, &event);
     clWaitForEvents(1, &event);
+    clock_gettime(CLOCK_REALTIME, &requestEnd);
 
-    // Read the memory buffer C on the device to the local variable C
     char *cracked_pw = (char *) malloc(sizeof(char) * (maxlen + 1));
-//    char *cracked_pw = (char *) malloc(sizeof(char) * (maxlen + 1));
     ret = clEnqueueReadBuffer(command_queue, cracked_pw_mem_obj, CL_TRUE, 0, sizeof(char) * (maxlen + 1), cracked_pw, 0, NULL, NULL);
     printf("Cracked Password: %s\n", cracked_pw);
+    double accum = (requestEnd.tv_sec - requestStart.tv_sec) + (requestEnd.tv_nsec - requestStart.tv_nsec) / BILLION;
+    printf("Time to crack Password: %lfs\n", accum);
 
 
-    // Display the result to the screen
-//    for (i = 0; i < LIST_SIZE; i++)
-//        printf("%d + %d = %d\n", A[i], B[i], C[i]);
-
-    // Clean up
     ret = clFlush(command_queue);
     ret = clFinish(command_queue);
     ret = clReleaseKernel(kernel);
     ret = clReleaseProgram(program);
     ret = clReleaseMemObject(starts_mem_obj);
     ret = clReleaseMemObject(stops_mem_obj);
-//    ret = clReleaseMemObject(c_mem_obj);
+    ret = clReleaseMemObject(maxlen_mem_obj);
+    ret = clReleaseMemObject(pw_hash_mem_obj);
+    ret = clReleaseMemObject(cracked_pw_mem_obj);
     ret = clReleaseCommandQueue(command_queue);
     ret = clReleaseContext(context);
     free(starts);
     free(stops);
-//    free(C);
+    free(cracked_pw);
     return 0;
 }
