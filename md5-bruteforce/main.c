@@ -19,7 +19,7 @@
 
 int main(void) {
 
-    int maxlen = 6;
+    int maxlen = 7;
 
     long permutations = 0;
     for (long i = 1; i <= maxlen; i++) {
@@ -37,7 +37,7 @@ int main(void) {
     int *stops = (int *) malloc(sizeof(int) * GLOBAL_ITEM_SIZE);
     uint *pw_hash = (uint *) malloc(sizeof(uint) * 4);
 
-    sscanf("e80b5017098950fc58aad83c8c14978e", "%08x%08x%08x%08x", &pw_hash[0], &pw_hash[1], &pw_hash[2], &pw_hash[3]);
+    sscanf("c75e86c6362f42a5b07cfe0f66d3d10a", "%08x%08x%08x%08x", &pw_hash[0], &pw_hash[1], &pw_hash[2], &pw_hash[3]);
     printf("Input Hash: %x%x%x%x\n", pw_hash[0], pw_hash[1], pw_hash[2], pw_hash[3]);
 
     int count = 0;

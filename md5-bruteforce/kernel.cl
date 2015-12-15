@@ -28,6 +28,7 @@ __kernel void vector_add(__global const int *starts, __global const int *stops, 
       this_hash[2] == pw_hash[2] &&
       this_hash[3] == pw_hash[3]
       ) {
+        printf("Found hash!\n");
         for (int i = 0; i < actual_length; i++) {
           cracked_pw[i] = chars[i];
           cracked_pw[i + 1] = 0x00;
